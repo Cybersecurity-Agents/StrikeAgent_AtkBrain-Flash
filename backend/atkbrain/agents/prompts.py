@@ -403,7 +403,15 @@ def build_brief(project: dict | None, graph: dict | None = None) -> str:
     from ..objective import objective_is_src
     supplied = normalize_supplied_auth(cfg.get("supplied_auth"))
     supplied_block = format_supplied_auth_brief(supplied, src=objective_is_src(_obj or cfg.get("track")))
-    if not desc and not hint and not entry_url and not machine_note and not supplied_block:
+    ctf_block = ""
+    if objective_allows_flag(str(_obj or cfg.get("track") or "")):
+        from .ctf_prompts import brief_for_category
+        ctf_block = brief_for_category(
+            cfg.get("ctf_category"),
+            attachments=cfg.get("attachments"),
+            offline=bool(cfg.get("offline")),
+        )
+    if not desc and not hint and not entry_url and not machine_note and not supplied_block and not ctf_block:
         return ""
     meta: list[str] = []
     if cfg.get("flag_count") and (_obj is None or objective_allows_flag(_obj)):
@@ -447,6 +455,8 @@ def build_brief(project: dict | None, graph: dict | None = None) -> str:
         parts.append("题面已出现的账密（禁止合成、禁止扩字典）：" + "；".join(cands[:8]))
     if supplied_block:
         parts.append(supplied_block)
+    if ctf_block:
+        parts.append(ctf_block)
     pending = [
         f for f in ((graph or {}).get("findings") or [])
         if isinstance(f, dict) and not f.get("secondary_verified")

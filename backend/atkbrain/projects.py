@@ -74,6 +74,24 @@ def _filter_scope_ips(host: str, ips: set[str], objective: str | None) -> tuple[
     return kept, warning
 
 
+async def create_offline_ctf_project(name: str, config: dict | None = None) -> dict:
+    """没有远程入口的 CTF：只分析附件和附加信息。"""
+    cfg = dict(config or {})
+    cfg["offline"] = True
+    cfg["track"] = "ctf"
+    cfg["objective"] = FLAG
+    pid = new_id("p_")
+    ts = now()
+    scope = Scope(targets=[], ips=[], ports=None, allow_subdomains=False, mode="strict")
+    await db.execute(
+        """INSERT INTO projects(id, name, kind, target, ports, scope, config, status, parent_id, created_at, updated_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+        (pid, (name or "").strip() or "本地题目", "single", "", _dumps(None), _dumps(scope.to_dict()),
+         _dumps(cfg), "idle", None, ts, ts),
+    )
+    return await get_project(pid)
+
+
 async def create_single_project(
     name: str,
     target: str,

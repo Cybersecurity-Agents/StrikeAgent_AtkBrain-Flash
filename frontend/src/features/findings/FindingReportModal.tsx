@@ -28,29 +28,23 @@ export function FindingReportModal({
   const { t, locale } = useT();
   const [detail, setDetail] = useState<FindingDetail | null>(null);
   const [err, setErr] = useState("");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setErr("");
     setDetail(null);
-    const load = () => api.getFinding(projectId, finding.id)
+    api.getFinding(projectId, finding.id, true)
       .then((d) => { if (!cancelled) setDetail(d); })
       .catch((e) => { if (!cancelled) setErr(String(e?.message || e)); });
-    load();
     return () => { cancelled = true; };
-  }, [projectId, finding.id]);
+  }, [projectId, finding.id, attempt]);
 
   useEffect(() => {
     if (detail?.report_state !== "writing") return;
-    let left = 24;
     let cancelled = false;
     const timer = window.setInterval(() => {
-      left -= 1;
-      if (left <= 0) {
-        window.clearInterval(timer);
-        return;
-      }
-      api.getFinding(projectId, finding.id)
+      api.getFinding(projectId, finding.id, false)
         .then((d) => {
           if (cancelled) return;
           setDetail(d);
@@ -80,7 +74,11 @@ export function FindingReportModal({
   const rating = showPage ? (d?.report_rating || "") : "";
   const repro = showPage ? (d?.report_repro || "") : "";
   const fix = showPage ? (d?.report_fix || "") : "";
-  const placeholder = state === "writing" ? t("findings.writing") : t("findings.pendingCopy");
+  const placeholder = state === "writing"
+    ? t("findings.writing")
+    : state === "failed"
+      ? t("findings.writeFailed")
+      : t("findings.pendingCopy");
 
   return (
     <Modal title={title} onClose={onClose} wide>
@@ -111,6 +109,14 @@ export function FindingReportModal({
             {state === "writing" && (
               <p className="muted" style={{ fontSize: 12, margin: "0 0 12px" }}>
                 {t("findings.writing")}
+              </p>
+            )}
+            {state === "failed" && (
+              <p className="muted" style={{ fontSize: 12, margin: "0 0 12px" }}>
+                {t("findings.writeFailed")}{" "}
+                <button className="btn btn-secondary btn-sm" onClick={() => setAttempt((n) => n + 1)}>
+                  {t("findings.retryWrite")}
+                </button>
               </p>
             )}
 

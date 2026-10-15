@@ -12,18 +12,7 @@ export function normalizeLocale(raw: string | null | undefined): Locale {
 }
 
 export function detectLocale(): Locale {
-  try {
-    const stored = localStorage.getItem(LOCALE_KEY);
-    if (stored === "zh" || stored === "en") return stored;
-  } catch {
-    /* ignore */
-  }
-  try {
-    const nav = String(navigator.language || "").toLowerCase();
-    return nav.startsWith("zh") ? "zh" : "en";
-  } catch {
-    return "zh";
-  }
+  return "zh";
 }
 
 export function getLocale(): Locale {
@@ -38,14 +27,14 @@ export function applyDocumentLocale(locale: Locale) {
     : "StrikeAgent_AtkBrain-Flash · 红队 AI 渗透平台";
 }
 
-export function setLocale(next: Locale) {
-  current = next === "en" ? "en" : "zh";
+export function setLocale(_next: Locale) {
+  current = "zh";
   try {
-    localStorage.setItem(LOCALE_KEY, current);
+    localStorage.setItem(LOCALE_KEY, "zh");
   } catch {
     /* ignore */
   }
-  applyDocumentLocale(current);
+  applyDocumentLocale("zh");
   listeners.forEach((fn) => fn());
 }
 
@@ -54,5 +43,10 @@ export function subscribeLocale(fn: () => void): () => void {
   return () => { listeners.delete(fn); };
 }
 
-current = detectLocale();
+current = "zh";
+try {
+  localStorage.setItem(LOCALE_KEY, "zh");
+} catch {
+  /* ignore */
+}
 applyDocumentLocale(current);

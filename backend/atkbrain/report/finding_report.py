@@ -115,17 +115,27 @@ def _page_state(finding: dict) -> str:
     return "writing"
 
 
-def prepare_finding_report(finding: dict, *, poc: dict | None = None) -> dict:
-    """弹层只在二次完成且五段落库后展示正文。有评级或猎手草稿不算页已写好。"""
-    from .pi_finding_page import PENDING_COPY, WRITING_COPY
+def prepare_finding_report(finding: dict, *, poc: dict | None = None, progress: str | None = None) -> dict:
+    """弹层只在二次完成且五段落库后展示正文。有评级或猎手草稿不算页已写好。
+
+    progress=failed：上一轮撰写已经结束且没写出五段，不能再显示「正在撰写」。
+    """
+    from .pi_finding_page import FAILED_COPY, PENDING_COPY, WRITING_COPY
 
     out = dict(finding)
     _ = poc
     state = _page_state(out)
+    if state == "writing" and progress == "failed":
+        state = "failed"
     out["report_state"] = state
     out["report_pending"] = state != "ready"
     if state != "ready":
-        note = WRITING_COPY if state == "writing" else PENDING_COPY
+        if state == "writing":
+            note = WRITING_COPY
+        elif state == "failed":
+            note = FAILED_COPY
+        else:
+            note = PENDING_COPY
         out["impact_detail"] = note
         out["impact"] = note
         out["secondary_review"] = note
@@ -175,6 +185,7 @@ def render_finding_markdown(
     poc: dict | None = None,
     heading: str = "#",
     lang: str | None = None,
+    progress: str | None = None,
 ) -> str:
     """单漏洞 Markdown：简介、危害、红队评级、手动复现、修复方式。"""
     from ..i18n.locale import normalize_locale
@@ -200,7 +211,7 @@ def render_finding_markdown(
     p = project or {}
     target = p.get("target") or ""
     poc = poc or poc_for_finding(finding, target if isinstance(target, str) else "")
-    finding = prepare_finding_report(finding, poc=poc)
+    finding = prepare_finding_report(finding, poc=poc, progress=progress)
     sev = display_finding_severity(finding).upper()
     cat = finding.get("category") or ""
     title = finding.get("title") or finding.get("id") or "finding"

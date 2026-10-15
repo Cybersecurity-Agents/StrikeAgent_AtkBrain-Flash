@@ -35,25 +35,12 @@ def get_report_lang() -> str:
 
 
 def config_output_lang(cfg: object) -> str:
-    if isinstance(cfg, str):
-        try:
-            import json
-            cfg = json.loads(cfg)
-        except Exception:
-            cfg = {}
-    if not isinstance(cfg, dict):
-        cfg = {}
-    return normalize_locale(cfg.get("output_lang"))
+    """猎面输出锁定中文。配置里的 en 不再生效。"""
+    _ = cfg
+    return "zh"
 
 
 def locale_from_request(request) -> str:
-    header = ""
-    try:
-        header = request.headers.get("x-locale") or request.headers.get("accept-language") or ""
-    except Exception:
-        header = ""
-    if "," in header:
-        header = header.split(",", 1)[0]
-    if ";" in header:
-        header = header.split(";", 1)[0]
-    return normalize_locale(header)
+    """界面语言锁定中文，不跟 Accept-Language 或 X-Locale 走。"""
+    _ = request
+    return "zh"

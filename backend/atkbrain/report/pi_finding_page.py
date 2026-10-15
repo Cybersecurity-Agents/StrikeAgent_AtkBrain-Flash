@@ -3,20 +3,25 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from typing import Any
 
 from ..config import settings
 from ..db import db
 
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.S)
-_JSON_OBJ_RE = re.compile(r"\{[\s\S]*\}")
 _LOCKS: dict[str, asyncio.Lock] = {}
+_PAGE_TASKS: set[asyncio.Task] = set()
+_SCHEDULED: set[str] = set()
+_FAILED: set[str] = set()
+log = logging.getLogger(__name__)
 
 PAGE_KEYS = ("report_summary", "report_impact", "report_rating", "report_repro", "report_fix")
+_JSON_KEYS = ("summary", "impact", "rating", "repro", "fix", *PAGE_KEYS)
 
 PENDING_COPY = "专职复核 Pi 完成二次验证与红队评级后撰写本段，不使用模板套话。"
 WRITING_COPY = "专职 Pi 正在撰写漏洞页…"
+FAILED_COPY = "漏洞页这次没有写完。可重新撰写；未写完前不套用模板。"
 
 
 def _page_system(project: dict | None) -> str:
@@ -94,26 +99,31 @@ def has_pi_page(finding: dict | None) -> bool:
 
 
 def parse_pi_page(text: str) -> dict[str, str]:
+    """从模型回复里取出五个板块。用解码器读完整对象，避免正文里的花括号把 JSON 截断。"""
     raw = (text or "").strip()
     if not raw:
         return {}
-    blob = ""
-    m = _JSON_FENCE_RE.search(raw)
-    if m:
-        blob = m.group(1)
-    else:
-        m2 = _JSON_OBJ_RE.search(raw)
-        if m2:
-            blob = m2.group(0)
-    if not blob:
+    decoder = json.JSONDecoder()
+    best: dict | None = None
+    best_n = 0
+    for i, ch in enumerate(raw):
+        if ch != "{":
+            continue
+        try:
+            data, _end = decoder.raw_decode(raw[i:])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        n = sum(1 for k in _JSON_KEYS if _clean(data.get(k)))
+        if n > best_n:
+            best = data
+            best_n = n
+            if n >= 4:
+                break
+    if not best:
         return {}
-    try:
-        data = json.loads(blob)
-    except Exception:
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    return pi_report_from(data)
+    return pi_report_from(best)
 
 
 async def save_pi_page(fid: str, spec: dict[str, str]) -> None:
@@ -225,39 +235,69 @@ async def ensure_pi_page(
     return out
 
 
-_SCHEDULED: set[str] = set()
+def page_activity(fid: str) -> str:
+    """writing：这条的撰写任务还在跑。failed：上一轮没写出五段。idle：还没挂任务。"""
+    if fid in _SCHEDULED:
+        return "writing"
+    if fid in _FAILED:
+        return "failed"
+    return "idle"
+
+
+def clear_page_failure(fid: str) -> None:
+    _FAILED.discard(fid)
 
 
 def schedule_pi_page(project_id: str, fid: str) -> None:
-    """二次已完成但五段还空时补写。同一条只挂一个任务。"""
+    """二次已完成但五段还空时补写。同一条只挂一个任务，并保住任务引用。"""
     if not project_id or not fid or fid in _SCHEDULED:
         return
     _SCHEDULED.add(fid)
+    _FAILED.discard(fid)
 
     async def _run() -> None:
+        outcome = "fail"
         try:
             row = await db.fetchone(
                 "SELECT * FROM findings WHERE id=? AND project_id=?",
                 (fid, project_id),
             )
             if not row:
+                outcome = "skip"
                 return
             data = dict(row)
             if has_pi_page(data):
+                outcome = "ok"
                 return
             from ..review.flags import get_review_flags
             if not data.get("secondary_verified") and get_review_flags()["secondary_verify"]:
+                outcome = "skip"
                 return
             from ..projects import get_project
             proj = await get_project(project_id)
-            await ensure_pi_page(project_id, data, project=proj)
+            got = await ensure_pi_page(project_id, data, project=proj)
+            if has_pi_page(got):
+                outcome = "ok"
+            else:
+                log.warning("finding page was not written pid=%s fid=%s", project_id, fid)
+        except Exception:
+            log.exception("finding page write failed pid=%s fid=%s", project_id, fid)
+            outcome = "fail"
         finally:
+            if outcome == "ok":
+                _FAILED.discard(fid)
+            elif outcome == "fail":
+                _FAILED.add(fid)
             _SCHEDULED.discard(fid)
 
     try:
-        asyncio.get_running_loop().create_task(_run())
+        task = asyncio.get_running_loop().create_task(_run())
     except RuntimeError:
         _SCHEDULED.discard(fid)
+        _FAILED.add(fid)
+        return
+    _PAGE_TASKS.add(task)
+    task.add_done_callback(_PAGE_TASKS.discard)
 
 
 async def fill_missing_pi_pages(project_id: str, *, project: dict | None = None) -> int:

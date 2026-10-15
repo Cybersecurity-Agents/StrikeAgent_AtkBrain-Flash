@@ -15,8 +15,8 @@ class LocaleTests(unittest.TestCase):
 
     def test_config_output_lang(self) -> None:
         from .locale import config_output_lang
-        self.assertEqual(config_output_lang({"output_lang": "en"}), "en")
-        self.assertEqual(config_output_lang('{"output_lang":"en-GB"}'), "en")
+        self.assertEqual(config_output_lang({"output_lang": "en"}), "zh")
+        self.assertEqual(config_output_lang('{"output_lang":"en-GB"}'), "zh")
         self.assertEqual(config_output_lang({}), "zh")
 
 

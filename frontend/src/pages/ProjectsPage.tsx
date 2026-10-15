@@ -9,7 +9,6 @@ import { PaginationBar, pageItems, readPageSize } from "../components/Pagination
 import { colors } from "../theme";
 import { listStatusOf } from "../projectStatus";
 import { useT } from "../i18n";
-import { getLocale, type Locale } from "../i18n/locale";
 
 function trackOf(p: Project): "redteam" | "ctf" | "src" {
   const tr = (p.config as any)?.track;
@@ -45,7 +44,7 @@ export function ProjectsPage() {
   useEffect(() => { if (heroRef.current) fadeInUp(heroRef.current.children); }, []);
   useEffect(() => { if (params.get("create") === "1") { setShowCreate(true); setParams({}, { replace: true }); } }, [params, setParams]);
   useEffect(() => { const alive = new Set(projects.map((p) => p.id)); setSelected((old) => new Set([...old].filter((id) => alive.has(id)))); }, [projects]);
-  const visible = projects.filter((p) => (!query || `${p.name} ${p.target || ""}`.toLowerCase().includes(query.toLowerCase())) && (kind === "all" || (kind === "single" ? p.kind === "single" : p.kind !== "single")) && (track === "all" || trackOf(p) === track) && (status === "all" || statusOf(p) === status));
+  const visible = projects.filter((p) => (!query || `${p.name} ${p.target || ""}`.toLowerCase().includes(query.toLowerCase())) && (kind === "all" || (kind === "single" ? p.kind === "single" : p.kind !== "single")) && (track === "all" || (track === "agent" ? trackOf(p) !== "ctf" : trackOf(p) === track)) && (status === "all" || statusOf(p) === status));
   useEffect(() => { setPage(1); }, [query, kind, track, status]);
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize) || 1);
   const curPage = Math.min(page, pageCount);
@@ -93,7 +92,7 @@ export function ProjectsPage() {
   } as Record<string, string>)[key] || key;
   return <div className="page-container projects-page">
     <div ref={heroRef} className="spread" style={{ alignItems: "flex-end", marginBottom: 26 }}><div><p className="eyebrow">PROJECTS</p><h1>{t("projects.title")}</h1><p className="muted" style={{ marginTop: 8 }}>{t("projects.subtitle")}</p></div><button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ {t("shell.newProject")}</button></div>
-    <section className="project-list-toolbar"><input className="input project-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("projects.search")} /><Filter value={kind} onChange={setKind} options={[["all", t("projects.kindAll")], ["single", t("projects.kindSingle")], ["cluster", t("projects.kindCluster")]]} /><Filter value={track} onChange={setTrack} options={[["all", t("projects.trackAll")], ["ctf", "CTF"], ["redteam", t("projects.trackRed")], ["src", t("projects.trackSrc")]]} /></section>
+    <section className="project-list-toolbar"><input className="input project-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("projects.search")} /><Filter value={kind} onChange={setKind} options={[["all", t("projects.kindAll")], ["single", t("projects.kindSingle")], ["cluster", t("projects.kindCluster")]]} /><Filter value={track} onChange={setTrack} options={[["all", t("projects.trackAll")], ["agent", t("projects.trackAgent")], ["ctf", "CTF"]]} /></section>
     <div className="status-filters">{STATUS_KEYS.map((key) => <button key={key} className={status === key ? "active" : ""} onClick={() => setStatus(key)}>{statusFilterLabel(key)} <b>{key === "all" ? projects.length : projects.filter((p) => statusOf(p) === key).length}</b></button>)}</div>
     <div className="batch-toolbar"><span className="muted">{t("projects.selected", { n: selected.size, total: visible.length })}</span><button className="btn btn-secondary btn-sm" onClick={selectAll} disabled={!visible.length || busy}>{t("projects.selectFiltered")}</button><button className="btn btn-secondary btn-sm" onClick={() => setSelected(new Set())} disabled={!selected.size || busy}>{t("projects.clearSelect")}</button><div style={{ flex: 1 }} /><button className="btn btn-primary btn-sm" onClick={() => setPendingAction("start")} disabled={!selected.size || busy}>{t("projects.batchStart")}</button><button className="btn btn-secondary btn-sm" onClick={() => setPendingAction("stop")} disabled={!selected.size || busy}>{t("projects.batchStop")}</button><button className="btn btn-danger btn-sm" onClick={() => setPendingAction("delete")} disabled={!selected.size || busy}>{t("projects.batchDelete")}</button></div>
     {batchErr ? <p className="error-text" style={{ margin: "8px 0 0" }}>{batchErr}</p> : null}
@@ -110,7 +109,7 @@ function ProjectRow({ p, selected, onToggle, onRename }: { p: Project; selected:
   const { t } = useT();
   const nav = useNavigate(); const s: any = p.stats || {}; const color: Record<string, string> = { running: colors.success, completed: colors.primary, idle: colors.mutedSoft, error: colors.error, stopped: colors.muted };
   const track = trackOf(p);
-  const trackText = track === "redteam" ? t("projects.trackRed") : track === "ctf" ? "CTF" : t("projects.trackSrc");
+  const trackText = track === "ctf" ? "CTF" : t("projects.trackAgent");
   const kindText = p.kind === "single" ? t("projects.single") : p.kind === "benchmark" ? (track === "src" ? t("projects.srcCluster") : t("projects.ctfCluster")) : t("projects.cluster");
   const subText = p.target || (p.kind === "benchmark" ? (track === "src" ? t("projects.srcGlue") : t("projects.ctfBench")) : t("projects.multiAsset"));
   const listStatus = statusOf(p);
@@ -137,21 +136,36 @@ function RenameDialog({ project, onClose, onSaved }: { project: Project; onClose
   return <Modal title={t("projects.renameTitle")} onClose={onClose}><p className="muted">{project.kind === "single" ? t("projects.renameSingle") : t("projects.renameCluster")}</p><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} />{err && <p className="error-text">{err}</p>}<div className="row" style={{ justifyContent: "flex-end", marginTop: 20 }}><button className="btn btn-secondary" onClick={onClose}>{t("common.cancel")}</button><button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? t("common.saving") : t("projects.saveName")}</button></div></Modal>;
 }
 
+const CTF_TYPES = ["web", "pwn", "reverse", "misc", "crypto"] as const;
+type CtfType = typeof CTF_TYPES[number];
+
+function targetLines(text: string): string[] {
+  const header = new Set(["host", "ip", "target", "url", "domain", "资产", "目标"]);
+  const out: string[] = [];
+  for (const rawLine of text.replace(/^\uFEFF/, "").split(/\r?\n/)) {
+    let raw = rawLine.trim();
+    if (!raw || raw.startsWith("#") || raw.startsWith("//") || raw.startsWith(";")) continue;
+    raw = raw.replace(/[,;，]+$/, "");
+    if (!raw) continue;
+    const parts = raw.includes("://") ? [raw] : raw.split(",");
+    for (const part of parts) {
+      const item = part.trim().replace(/[,;，]+$/, "");
+      if (!item || header.has(item.toLowerCase())) continue;
+      out.push(item);
+    }
+  }
+  return out;
+}
+
 function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const { t, locale } = useT();
+  const { t } = useT();
   const nav = useNavigate();
-  const [kind, setKind] = useState<"single" | "cluster">("single");
-  const [track, setTrack] = useState<"redteam" | "ctf" | "src">("redteam");
-  const [outputLang, setOutputLang] = useState<Locale>(() => getLocale());
+  const [track, setTrack] = useState<"redteam" | "ctf">("redteam");
+  const [ctfType, setCtfType] = useState<CtfType>("web");
   const [name, setName] = useState("");
-  const [target, setTarget] = useState("");
-  const [ports, setPorts] = useState("");
-  const [assets, setAssets] = useState("");
-  const [baseUrl, setBaseUrl] = useState("https://tsecbench.zc.tencent.com");
-  const [token, setToken] = useState("");
-  const [authUser, setAuthUser] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authToken, setAuthToken] = useState("");
+  const [targets, setTargets] = useState("");
+  const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [createdId, setCreatedId] = useState<string | null>(null);
@@ -160,11 +174,9 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const [hardStops, setHardStops] = useState<Record<string, { label?: string; conditions?: string[] }>>({});
   const importPoll = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { setOutputLang(locale); }, [locale]);
-
   useEffect(() => {
     api.settings().then((s) => setHardStops(s?.defaults?.hard_stop || {})).catch(() => {});
-  }, [locale]);
+  }, []);
 
   const enterProject = (id: string) => {
     if (importPoll.current) clearTimeout(importPoll.current);
@@ -204,36 +216,39 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
   const submit = async () => {
     setBusy(true); setErr("");
+    const lines = targetLines(targets);
+    const batch = lines.length > 1;
     try {
-      const clusterBenchmark = kind === "cluster" && track === "ctf";
-      const body: any = { kind: clusterBenchmark ? "benchmark" : kind, name, track, output_lang: outputLang };
-      if (kind === "single") {
-        body.target = target.trim();
-        if (!body.target) throw new Error(t("projects.needTarget"));
-        if (ports.trim()) body.ports = ports.split(/[,\s]+/).filter(Boolean).map(Number);
+      if (track === "ctf" && !ctfType) throw new Error(t("projects.needCtfType"));
+      if (!lines.length && !(track === "ctf" && files.length)) throw new Error(track === "ctf" ? t("projects.needTargetOrFile") : t("projects.needTarget"));
+      const body: any = { name, track, output_lang: "zh", hint: note.trim() };
+      if (track === "ctf") body.ctf_category = ctfType;
+      if (!lines.length) {
+        body.kind = "single";
+      } else if (!batch) {
+        body.kind = "single";
+        body.target = lines[0];
         body.allow_subdomains = false;
-      } else if (clusterBenchmark) {
-        if (!baseUrl.trim() || !token.trim()) throw new Error(t("projects.needBench"));
-        body.base_url = baseUrl.trim();
-        body.token = token.trim();
       } else {
-        const lines = assets.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-        if (!lines.length) throw new Error(t("projects.needAssets"));
-        body.assets = [assets];
+        body.kind = "cluster";
+        body.assets = [targets];
         setImportProgress({
           phase: "merge",
           done: 0,
           total: lines.length,
-          message: track === "src" ? t("projects.mergingZone") : t("projects.mergingHost"),
+          message: t("projects.mergingHost"),
         });
       }
-      if (track !== "ctf") {
-        if (authUser.trim()) body.auth_user = authUser.trim();
-        if (authPassword) body.auth_password = authPassword;
-        if (authToken.trim()) body.auth_token = authToken.trim();
-      }
       const p: any = await api.createProject(body);
-      if (kind === "cluster" && !clusterBenchmark && (p.importing || p.import_progress)) {
+      if (track === "ctf" && files.length) {
+        try {
+          await api.uploadChallengeFiles(p.id, files);
+        } catch (uploadErr) {
+          setCreatedId(p.id);
+          throw uploadErr;
+        }
+      }
+      if (batch && (p.importing || p.import_progress)) {
         setCreatedId(p.id);
         setImportProgress(p.import_progress || { phase: "spawn", done: 0, total: 0, message: t("projects.importing") });
         return;
@@ -253,73 +268,83 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     onClose();
   };
 
+  const stopKey = track === "ctf" ? "flag" : "redteam";
+  const stop = hardStops[stopKey];
+  const typeSummary: Record<CtfType, string> = {
+    web: t("projects.ctfWeb"),
+    pwn: t("projects.ctfPwn"),
+    reverse: t("projects.ctfReverse"),
+    misc: t("projects.ctfMisc"),
+    crypto: t("projects.ctfCrypto"),
+  };
+  const typeLabel: Record<CtfType, string> = {
+    web: "Web",
+    pwn: "PWN",
+    reverse: "逆向",
+    misc: "杂项",
+    crypto: "密码学",
+  };
+
   return (
-    <Modal title={t("projects.createTitle")} onClose={handleClose}>
-      <div className="field">
-        <span>{t("projects.shape")}</span>
-        <div className="row" style={{ gap: 8, marginTop: 4, flexWrap: "wrap" }}>
-          <button className={`btn ${kind === "single" ? "btn-primary" : "btn-secondary"}`} onClick={() => setKind("single")}>{t("projects.singleTarget")}</button>
-          <button className={`btn ${kind === "cluster" ? "btn-primary" : "btn-secondary"}`} onClick={() => setKind("cluster")}>{t("projects.clusterAssets")}</button>
-        </div>
+    <Modal title={t("projects.createTitle")} onClose={handleClose} wide>
+      <div className="create-entries">
+        <button type="button" className={`btn ${track === "redteam" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTrack("redteam")}>{t("projects.entryAgent")}</button>
+        <button type="button" className={`btn ${track === "ctf" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTrack("ctf")}>{t("projects.entryCtf")}</button>
       </div>
+      <span style={{ fontSize: 12, color: "var(--muted)", marginTop: 8, display: "block", lineHeight: 1.55 }}>
+        {track === "redteam" ? t("projects.hintRed") : t("projects.hintCtfSingle")}
+        {stop?.label ? ` ${stop.label}` : ""}
+        {(stop?.conditions || []).map((c) => <div key={c}>· {c}</div>)}
+      </span>
 
-      <div className="field" style={{ marginTop: 12 }}>
-        <span>{t("projects.track")}</span>
-        <div className="row" style={{ gap: 8, marginTop: 4, flexWrap: "wrap" }}>
-          <button type="button" className={`btn btn-sm ${track === "redteam" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTrack("redteam")}>{t("projects.trackRedBtn")}</button>
-          <button type="button" className={`btn btn-sm ${track === "ctf" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTrack("ctf")}>{t("projects.trackCtfBtn")}</button>
-          <button type="button" className={`btn btn-sm ${track === "src" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTrack("src")}>{t("projects.trackSrcBtn")}</button>
+      {track === "ctf" && (
+        <div className="field" style={{ marginTop: 14 }}>
+          <span>{t("projects.ctfType")}</span>
+          <div className="ctf-types">
+            {CTF_TYPES.map((key) => (
+              <button key={key} type="button" className={`btn btn-sm ${ctfType === key ? "btn-primary" : "btn-secondary"}`} onClick={() => setCtfType(key)}>{typeLabel[key]}</button>
+            ))}
+          </div>
+          <span style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, display: "block", lineHeight: 1.55 }}>{typeSummary[ctfType]}</span>
+          <div className="field" style={{ marginTop: 12 }}>
+            <span>{t("projects.ctfFiles")}</span>
+            <div className="row" style={{ gap: 8, marginTop: 4 }}>
+              <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
+                {t("projects.pickFile")}
+                <input
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    const picked = Array.from(e.target.files || []);
+                    e.target.value = "";
+                    if (!picked.length) return;
+                    setFiles((prev) => [...prev, ...picked]);
+                  }}
+                />
+              </label>
+            </div>
+            {files.length > 0 && (
+              <div className="file-picks">
+                {files.map((file, i) => <span key={`${file.name}-${i}`}>{file.name}</span>)}
+              </div>
+            )}
+            <span style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, display: "block" }}>{t("projects.ctfFilesHint")}</span>
+          </div>
         </div>
-        <span style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, display: "block", lineHeight: 1.55 }}>
-          {track === "redteam" && t("projects.hintRed")}
-          {track === "ctf" && (kind === "cluster" ? t("projects.hintCtfCluster") : t("projects.hintCtfSingle"))}
-          {track === "src" && (kind === "cluster" ? t("projects.hintSrcCluster") : t("projects.hintSrcSingle"))}
-          {" "}
-          {(track === "ctf" ? hardStops.flag : hardStops[track])?.label || ""}
-          {((track === "ctf" ? hardStops.flag : hardStops[track])?.conditions || []).map((c) => (
-            <div key={c}>· {c}</div>
-          ))}
-        </span>
-      </div>
-
-      <div className="field" style={{ marginTop: 12 }}>
-        <span>{t("common.outputLang")}</span>
-        <div className="row" style={{ gap: 8, marginTop: 4, flexWrap: "wrap" }}>
-          <button type="button" className={`btn btn-sm ${outputLang === "zh" ? "btn-primary" : "btn-secondary"}`} onClick={() => setOutputLang("zh")}>{t("common.langZh")}</button>
-          <button type="button" className={`btn btn-sm ${outputLang === "en" ? "btn-primary" : "btn-secondary"}`} onClick={() => setOutputLang("en")}>{t("common.langEn")}</button>
-        </div>
-        <span style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, display: "block", lineHeight: 1.55 }}>
-          {t("common.outputLangHint")}
-        </span>
-      </div>
+      )}
 
       <label className="field" style={{ marginTop: 12 }}>
         <span>{t("projects.name")}</span>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === "single" ? t("projects.namePhSingle") : t("projects.namePhCluster")} />
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("projects.namePhSingle")} />
       </label>
 
-      {kind === "single" && (
-        <>
-          <label className="field">
-            <span>{t("projects.target")}</span>
-            <input className="input" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="192.168.236.1:8787 or example.com" />
-          </label>
-          <label className="field">
-            <span>{t("projects.ports")}</span>
-            <input className="input" value={ports} onChange={(e) => setPorts(e.target.value)} placeholder="80,443,8787" />
-          </label>
-          <span style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, display: "block" }}>
-            {t("projects.scopeHint")}
-          </span>
-        </>
-      )}
-
-      {kind === "cluster" && track !== "ctf" && (
+      <div className="create-split" style={{ marginTop: 12 }}>
         <div className="field">
-          <span>{t("projects.assets")}</span>
-          <div className="row" style={{ gap: 10, margin: "6px 0 8px", flexWrap: "wrap", alignItems: "center" }}>
+          <span>{t("projects.targetBox")}</span>
+          <div className="row" style={{ gap: 8, margin: "6px 0 8px" }}>
             <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
-              {t("projects.pickFile")}
+              {t("projects.pickTargets")}
               <input
                 type="file"
                 accept=".txt,.csv,.list,text/plain"
@@ -329,66 +354,22 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                   e.target.value = "";
                   if (!f) return;
                   const text = await f.text();
-                  setAssets((prev) => (prev ? `${prev.trim()}\n${text}` : text));
+                  setTargets((prev) => (prev.trim() ? `${prev.trim()}\n${text}` : text));
                 }}
               />
             </label>
-            <span className="muted" style={{ fontSize: 12 }}>
-              {track === "src" ? t("projects.mergeSrc") : t("projects.mergeRed")}
-            </span>
           </div>
-          <textarea
-            className="input"
-            rows={5}
-            value={assets}
-            onChange={(e) => setAssets(e.target.value)}
-            placeholder={"10.0.0.5\nexample.com\n10.0.0.6:8080"}
-          />
-          <span style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, display: "block" }}>
-            {t("projects.mergeHint")}{track === "src" ? t("projects.mergeHintSrc") : ""}.
-          </span>
+          <textarea className="input" rows={6} value={targets} onChange={(e) => setTargets(e.target.value)} placeholder={"example.com\n192.168.236.1:8787"} />
+          <span style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, display: "block" }}>{t("projects.targetHint")}</span>
         </div>
-      )}
-
-      {kind === "cluster" && track === "ctf" && (
-        <>
-          <label className="field">
-            <span>{t("projects.benchUrl")}</span>
-            <input className="input" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://tsecbench.zc.tencent.com" />
-          </label>
-          <label className="field">
-            <span>{t("projects.benchToken")}</span>
-            <input className="input" value={token} onChange={(e) => setToken(e.target.value)} placeholder="a1b2c3d4-..." />
-          </label>
-          <span style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, display: "block" }}>
-            {t("projects.benchHint")}
-          </span>
-        </>
-      )}
-
-      {track !== "ctf" && (
-        <div className="field" style={{ marginTop: 12 }}>
-          <span>{t("projects.authTitle")}</span>
-          <label className="field" style={{ marginTop: 8 }}>
-            <span>{t("projects.authUser")}</span>
-            <input className="input" autoComplete="off" value={authUser} onChange={(e) => setAuthUser(e.target.value)} placeholder="admin" />
-          </label>
-          <label className="field">
-            <span>{t("projects.authPassword")}</span>
-            <input className="input" type="password" autoComplete="new-password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>{t("projects.authToken")}</span>
-            <input className="input" autoComplete="off" value={authToken} onChange={(e) => setAuthToken(e.target.value)} placeholder="Bearer eyJ... or Cookie: session=..." />
-          </label>
-          <span style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, display: "block", lineHeight: 1.55 }}>
-            {t("projects.authHint")}
-          </span>
-        </div>
-      )}
+        <label className="field">
+          <span>{t("projects.extraInfo")}</span>
+          <textarea className="input" rows={8} value={note} onChange={(e) => setNote(e.target.value)} placeholder={track === "ctf" ? t("projects.extraCtf") : t("projects.extraAgent")} style={{ marginTop: 6 }} />
+        </label>
+      </div>
 
       {err && <div style={{ color: "var(--error)", marginBottom: 12, fontSize: 14 }}>{err}</div>}
-      {(busy || importProgress) && kind === "cluster" && track !== "ctf" && (
+      {(busy || importProgress) && targetLines(targets).length > 1 && (
         <ImportProgressBar
           progress={importProgress || { phase: "spawn", done: 0, total: 0, message: t("projects.creatingCluster") }}
           onPause={createdId ? async () => {

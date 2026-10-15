@@ -50,11 +50,11 @@ function reviewLine(row: ReviewLive | null | undefined, t: (key: string, vars?: 
 }
 
 type Counts = { total: number; critical: number; high: number; medium: number; low: number; info: number };
-type TrackCounts = { all: number; redteam: number; ctf: number; src: number };
+type TrackCounts = { all: number; agent: number; redteam: number; ctf: number; src: number };
 
 const EMPTY_COUNTS: Counts = { total: 0, critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-const EMPTY_TRACKS: TrackCounts = { all: 0, redteam: 0, ctf: 0, src: 0 };
-const TRACK_KEYS: Array<keyof TrackCounts> = ["all", "redteam", "ctf", "src"];
+const EMPTY_TRACKS: TrackCounts = { all: 0, agent: 0, redteam: 0, ctf: 0, src: 0 };
+const TRACK_KEYS = ["all", "agent", "ctf"] as const;
 
 const BAR: { key: keyof Counts; color: string }[] = [
   { key: "critical", color: "var(--sev-critical)" },
@@ -178,8 +178,8 @@ export function VulnsPage() {
       <div className="status-filters">
         {TRACK_KEYS.map((key) => (
           <button key={key} type="button" className={track === key ? "active" : ""} onClick={() => setTrack(key)}>
-            {key === "all" ? t("vulns.trackAll") : key === "ctf" ? "CTF" : key === "src" ? t("projects.trackSrc") : t("projects.trackRed")}
-            <b>{trackCounts[key] || 0}</b>
+            {key === "all" ? t("vulns.trackAll") : key === "ctf" ? "CTF" : t("projects.trackAgent")}
+            <b>{(key === "agent" ? (trackCounts.agent || (trackCounts.redteam || 0) + (trackCounts.src || 0)) : trackCounts[key]) || 0}</b>
           </button>
         ))}
       </div>
@@ -222,7 +222,7 @@ export function VulnsPage() {
                       <span className="table-sub mono">{f.project_target || ""}</span>
                     )}
                   </td>
-                  <td>{f.project_track === "ctf" ? "CTF" : f.project_track === "src" ? t("projects.trackSrc") : t("projects.trackRed")}</td>
+                  <td>{f.project_track === "ctf" ? "CTF" : t("projects.trackAgent")}</td>
                   <td>
                     <button type="button" className="vuln-title-btn" onClick={() => setOpen(f)}>
                       {scrubCandidateRceLabel(f.title) || f.title}
