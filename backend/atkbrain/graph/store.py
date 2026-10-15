@@ -3595,7 +3595,7 @@ async def list_library_findings(
     cat = str(category or "").strip().lower()
     sev = str(severity or "").strip().lower()
     tn = str(track or "").strip().lower()
-    if tn not in ("redteam", "ctf", "src"):
+    if tn not in ("redteam", "ctf", "src", "agent"):
         tn = ""
     page = max(1, int(page or 1))
     page_size = max(1, min(int(page_size or 30), 100))
@@ -3638,7 +3638,7 @@ async def list_library_findings(
     rows = await db.fetchall(sql, tuple(params))
 
     matched: list[dict] = []
-    track_counts = {"all": 0, "redteam": 0, "ctf": 0, "src": 0}
+    track_counts = {"all": 0, "agent": 0, "redteam": 0, "ctf": 0, "src": 0}
     for row in rows:
         if not is_visible_finding(row):
             continue
@@ -3666,10 +3666,15 @@ async def list_library_findings(
         item["reviewing_rating"] = bool(rate and rate.get("status") == "running")
         matched.append(item)
         track_counts["all"] += 1
+        if ptr in ("redteam", "src"):
+            track_counts["agent"] += 1
         if ptr in track_counts:
             track_counts[ptr] += 1
 
-    filtered = [x for x in matched if (not tn or x.get("project_track") == tn)]
+    if tn == "agent":
+        filtered = [x for x in matched if x.get("project_track") in ("redteam", "src")]
+    else:
+        filtered = [x for x in matched if (not tn or x.get("project_track") == tn)]
     counts = {"total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
     for item in filtered:
         counts["total"] += 1

@@ -267,6 +267,11 @@ export const api = {
     }),
   createProject: (body: any) =>
     req<Project>("/api/projects", { method: "POST", headers: J, body: JSON.stringify(body) }),
+  uploadChallengeFiles: (id: string, files: File[]) => {
+    const body = new FormData();
+    for (const file of files) body.append("files", file, file.name);
+    return req<{ ok: boolean; files: string[] }>(`/api/projects/${id}/challenge-files`, { method: "POST", body });
+  },
   deleteProject: (id: string) => req<any>(`/api/projects/${id}`, { method: "DELETE" }),
   renameProject: (id: string, name: string) =>
     req<Project>(`/api/projects/${id}`, {
@@ -302,8 +307,8 @@ export const api = {
     req<any>(`/api/projects/${id}/report/export/${encodeURIComponent(jobId)}`),
   reportExportFileUrl: (id: string, jobId: string) =>
     withAppBase(`/api/projects/${id}/report/export/${encodeURIComponent(jobId)}/file`),
-  getFinding: (id: string, fid: string) =>
-    req<FindingDetail>(`/api/projects/${id}/findings/${fid}`),
+  getFinding: (id: string, fid: string, retry = false) =>
+    req<FindingDetail>(`/api/projects/${id}/findings/${fid}${retry ? "?retry=1" : ""}`),
   findingReportUrl: (id: string, fid: string, lang?: string) =>
     withAppBase(`/api/projects/${id}/findings/${fid}/report?format=md&lang=${encodeURIComponent(lang || getLocale())}`),
   poc: (id: string, fid: string) => req<{ curl: string; python: string }>(`/api/projects/${id}/findings/${fid}/poc`),

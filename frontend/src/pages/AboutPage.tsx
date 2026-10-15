@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { LangToggle } from "../components/LangToggle";
 import { LoginRipple } from "../components/LoginRipple";
 import { Spike } from "../components/Spike";
 import { useT } from "../i18n";
@@ -35,7 +34,6 @@ export function ProductIntro({
       <ul className="about-tracks">
         <li>{t("about.trackRed")}</li>
         <li>{t("about.trackCtf")}</li>
-        <li>{t("about.trackSrc")}</li>
       </ul>
       <h2>{t("about.cybenchTitle")}</h2>
       <p>{t("about.cybenchBody")}</p>
@@ -56,9 +54,6 @@ export function AboutPage() {
     <div className="login-page about-page">
       <LoginRipple />
       <div className="about-wrap">
-        <div className="about-toolbar">
-          <LangToggle compact />
-        </div>
         <ProductIntro
           ctaTo="/login"
           ctaLabel={t("about.ctaLogin")}

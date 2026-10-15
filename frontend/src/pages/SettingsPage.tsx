@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthGate";
-import { LangToggle } from "../components/LangToggle";
 import { Modal } from "../components/Modal";
 import { PasswordChangeForm } from "../components/PasswordChangeForm";
 import { useT } from "../i18n";
@@ -259,11 +258,6 @@ export function SettingsPage() {
         </Modal>
       ) : null}
       <div className="settings-grid">
-        <section className="card-cream" style={{ gridColumn: "1 / -1" }}>
-          <h3>{t("settings.langCard")}</h3>
-          <LangToggle />
-          <p className="muted" style={{ marginTop: 10 }}>{t("common.legacyHint")}</p>
-        </section>
         {me?.authenticated ? (
           <section className="card-cream" style={{ gridColumn: "1 / -1" }}>
             <h3>{t("password.settingsTitle")}</h3>

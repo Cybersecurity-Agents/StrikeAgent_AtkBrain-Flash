@@ -1,7 +1,3 @@
-<p>
-  <a href="README.en.md">English</a>
-</p>
-
 <p align="center">
   <img src="docs/assets/icon.svg" width="128" height="128" alt="StrikeAgent" />
   <img src="docs/assets/times.svg" width="48" height="128" alt="×" />
@@ -24,7 +20,7 @@
 
 ## 架构
 
-控制台调度猎面；攻击图驱动自循环。从者整轮打完再问御主，卡住或到周期才开口；对话框里的人工指令立刻打断本轮。收工把手法蒸馏进记忆库。运行时是 Pi，用哪家模型在设置里的 JSON 里定。红队 / 蓝队/SRC 默认直连真实 IP；只有打开设置里导入的代理池才走代理。
+控制台调度猎面；攻击图驱动自循环。从者整轮打完再问御主，卡住或到周期才开口；对话框里的人工指令立刻打断本轮。收工把手法蒸馏进记忆库。运行时是 Pi，用哪家模型在设置里的 JSON 里定。agent测试默认直连真实 IP；只有打开设置里导入的代理池才走代理。
 
 ![StrikeAgent_AtkBrain-Flash 架构](docs/assets/architecture.png)
 
@@ -34,9 +30,9 @@
 
 ![产品全貌](docs/assets/main.gif)
 
-首页及新建任务：单目标 / 集群；红队（getshell）、CTF（flag）、蓝队/SRC。
+首页及新建任务：Agent测试与 CTF 两个入口。目标可单条填写，也可导入 txt / csv 批量创建，并填写附加信息。CTF 另选 Web、PWN、逆向、杂项、密码学，并可上传题目附件。
 
-![首页及新建任务](docs/assets/ScreenShot_2026-09-19_231256_939.png)
+![首页及新建任务](docs/assets/create-project.png)
 
 项目控制台：攻击图、时间线、漏洞、对话。
 

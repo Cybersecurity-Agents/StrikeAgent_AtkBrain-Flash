@@ -640,6 +640,8 @@ async def _spawn_machine_group(
         extra_targets=extra,
         extra_ips=extra_ips,
     )
+    from .challenge_files import copy_challenge_files
+    await copy_challenge_files(str(project.get("id") or ""), sub["id"])
     return sub, True
 
 

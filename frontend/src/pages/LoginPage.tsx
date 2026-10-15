@@ -4,7 +4,6 @@ import { animate } from "animejs";
 import { api } from "../api";
 import { useAuth } from "../AuthGate";
 import { encryptLoginPassword } from "../authCrypto";
-import { LangToggle } from "../components/LangToggle";
 import { LoginRipple } from "../components/LoginRipple";
 import { Spike } from "../components/Spike";
 import { markShowUpdate } from "../components/UpdateModal";
@@ -136,7 +135,6 @@ export function LoginPage() {
         <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? t("login.verifying") : (pendingId ? t("common.confirm") : t("login.submit"))}</button>
         <div className="login-card-foot">
           <Link className="muted" to="/about" style={{ fontSize: 13 }}>{t("login.about")}</Link>
-          <LangToggle compact />
         </div>
       </form>
     </div>

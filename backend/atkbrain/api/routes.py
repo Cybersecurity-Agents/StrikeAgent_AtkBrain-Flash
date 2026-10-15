@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -20,6 +20,7 @@ from ..projects import (
     assert_safe_project_target,
     create_benchmark_project,
     create_cluster_project,
+    create_offline_ctf_project,
     create_single_project,
     delete_project,
     delete_projects,
@@ -124,7 +125,9 @@ class CreateProjectReq(BaseModel):
     auth_user: str | None = None         # 授权测试账号（红队/蓝队）；不与评测 token 混用
     auth_password: str | None = None
     auth_token: str | None = None        # Bearer / JWT / API key / Cookie 原文
-    output_lang: str | None = None       # zh | en；猎面人可见输出语言
+    output_lang: str | None = None       # 已锁定中文；传入值忽略
+    hint: str | None = None              # 附加信息：登录信息或题目线索
+    ctf_category: str | None = None      # web | pwn | reverse | misc | crypto
 
 
 class OutputLangReq(BaseModel):
@@ -583,17 +586,28 @@ async def api_create_project(req: CreateProjectReq):
     cfg: dict = {
         "track": track,
         "objective": objective,
-        "output_lang": normalize_locale(req.output_lang or get_locale()),
+        "output_lang": "zh",
     }
+    hint = str(req.hint or "").strip()
+    if hint:
+        cfg["hint"] = hint[:8000]
     if req.model:
         cfg["model"] = req.model
+    bench = req.kind == "benchmark" or (
+        req.kind == "cluster" and bool(req.base_url and req.token)
+    )
+    if track == "ctf" and not bench:
+        from ..agents.ctf_prompts import normalize_ctf_category
+        category = normalize_ctf_category(req.ctf_category)
+        if not category:
+            raise HTTPException(400, "CTF 需要选择题型：Web、PWN、逆向、杂项、密码学")
+        cfg["ctf_category"] = category
     if track in ("redteam", "src"):
-        from ..agents.brief_creds import normalize_supplied_auth
-        supplied = normalize_supplied_auth({
-            "user": req.auth_user,
-            "password": req.auth_password,
-            "token": req.auth_token,
-        })
+        from ..agents.brief_creds import extract_supplied_auth, merge_supplied_auth
+        supplied = merge_supplied_auth(
+            extract_supplied_auth(hint),
+            {"user": req.auth_user, "password": req.auth_password, "token": req.auth_token},
+        )
         if supplied:
             cfg["supplied_auth"] = supplied
     try:
@@ -626,17 +640,43 @@ async def api_create_project(req: CreateProjectReq):
             )
             proj = {**proj, "importing": True, "import_progress": job, "auto_started": []}
         elif req.kind == "single":
-            if not req.target:
-                raise HTTPException(400, "单目标项目需要提供 target（域名或 IP）")
-            proj = await create_single_project(
-                req.name, req.target, req.ports,
-                allow_subdomains=False, mode=req.mode, config=cfg,
-            )
+            if not (req.target or "").strip():
+                if track != "ctf":
+                    raise HTTPException(400, "请至少填写一个目标")
+                proj = await create_offline_ctf_project(req.name, cfg)
+            else:
+                proj = await create_single_project(
+                    req.name, req.target, req.ports,
+                    allow_subdomains=False, mode=req.mode, config=cfg,
+                )
         else:
             raise HTTPException(400, "kind 仅支持 single|cluster|benchmark")
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return proj
+
+
+@router.post("/projects/{pid}/challenge-files")
+async def api_challenge_files(pid: str, files: list[UploadFile] = File(...)):
+    """CTF 题目附件。写入 workspace/challenge，并抄给已有子项目。"""
+    project = await get_project(pid)
+    if not project:
+        raise HTTPException(404, msg("project_missing"))
+    cfg = project.get("config") or {}
+    track = str(cfg.get("track") or "")
+    objective = str(cfg.get("objective") or "")
+    if track != "ctf" and objective != "flag":
+        raise HTTPException(400, "只有 CTF 项目可以上传题目附件")
+    blobs: list[tuple[str, bytes]] = []
+    for item in files or []:
+        data = await item.read()
+        blobs.append((item.filename or "file", data))
+    from ..challenge_files import save_challenge_uploads
+    try:
+        names = await save_challenge_uploads(pid, blobs)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ok": True, "files": names}
 
 
 @router.post("/projects/assets/preview")
@@ -757,9 +797,9 @@ async def api_set_output_lang(pid: str, req: OutputLangReq):
     if not p:
         raise HTTPException(404, msg("project_missing"))
     cfg = dict(p.get("config") or {})
-    cfg["output_lang"] = normalize_locale(req.output_lang)
+    cfg["output_lang"] = "zh"
     await update_config(pid, cfg)
-    return {"ok": True, "output_lang": cfg["output_lang"]}
+    return {"ok": True, "output_lang": "zh"}
 
 
 @router.post("/projects/{pid}/start")
@@ -1258,16 +1298,33 @@ async def api_finding_review(pid: str, fid: str, req: FindingReviewReq):
 
 
 @router.get("/projects/{pid}/findings/{fid}")
-async def api_finding_detail(pid: str, fid: str):
-    """单漏洞全量详情（不截断），供漏洞弹层。非 rejected 均可查看。"""
+async def api_finding_detail(pid: str, fid: str, retry: int = Query(0)):
+    """单漏洞全量详情（不截断），供漏洞弹层。非 rejected 均可查看。
+
+    retry=1 只在打开弹层或用户点「重新撰写」时带上，用来再挂一轮。
+    轮询不带 retry，撰写失败后停在 failed，不再显示「正在撰写」。
+    """
     finding, p, _related = await _load_reportable_finding(pid, fid)
     target = _project_http_target(p)
     poc = poc_for_finding(finding, target)
-    finding = prepare_finding_report(finding, poc=poc)
+    preview = prepare_finding_report(finding, poc=poc)
+    progress = None
+    if preview.get("report_state") == "writing":
+        from ..report.pi_finding_page import clear_page_failure, page_activity, schedule_pi_page
+        if retry:
+            clear_page_failure(fid)
+        activity = page_activity(fid)
+        if activity == "failed":
+            progress = "failed"
+        elif activity != "writing":
+            schedule_pi_page(pid, fid)
+            if page_activity(fid) == "failed":
+                progress = "failed"
+    if progress:
+        finding = prepare_finding_report(finding, poc=poc, progress=progress)
+    else:
+        finding = preview
     finding["poc"] = poc
-    if finding.get("report_state") == "writing":
-        from ..report.pi_finding_page import schedule_pi_page
-        schedule_pi_page(pid, fid)
     return finding
 
 
@@ -1280,7 +1337,9 @@ async def api_finding_report(pid: str, fid: str, format: str = Query("md"), lang
     finding, p, _related = await _load_reportable_finding(pid, fid)
     target = _project_http_target(p)
     poc = poc_for_finding(finding, target)
-    body = render_finding_markdown(p, finding, poc=poc, lang=loc)
+    from ..report.pi_finding_page import page_activity
+    progress = "failed" if page_activity(fid) == "failed" else None
+    body = render_finding_markdown(p, finding, poc=poc, lang=loc, progress=progress)
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in fid)[:48]
     return Response(
         body,
