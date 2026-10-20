@@ -192,3 +192,6 @@ Docker 镜像里带了常用探测工具。Linux 实例只保证控制台和 Pi 
 交流群已满。关注公众号「夜安团队SEC」联系拉群。
 
 ![夜安团队SEC 公众号名片](docs/assets/wechat-oa.png)
+
+<img src="docs/assets/wechat-group.jpg" alt="夜安-ai自动化交流二群" width="465">
+
