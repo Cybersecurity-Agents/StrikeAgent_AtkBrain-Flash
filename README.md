@@ -193,5 +193,5 @@ Docker 镜像里带了常用探测工具。Linux 实例只保证控制台和 Pi 
 
 ![夜安团队SEC 公众号名片](docs/assets/wechat-oa.png)
 
-![夜安-ai自动化交流二群](docs/assets/wechat-group.jpg)
+<img src="docs/assets/wechat-group.jpg" alt="夜安-ai自动化交流二群" width="465">
 
