@@ -165,6 +165,10 @@ function targetSlot(index: number) {
   };
 }
 
+function isLayoutAnchor(n: { type?: string; key?: string }, anchorKey: string) {
+  return n.type === "target" && !!anchorKey && n.key === anchorKey;
+}
+
 /**
  * 每个节点归属哪个黑色目标：
  * - target 自己
@@ -455,6 +459,7 @@ export function AttackGraph({ graph, onSelect, selectedKey, onClear }: { graph: 
   const connectedRef = useRef<Set<string>>(new Set());
   const homeRef = useRef<Map<string, string>>(new Map());
   const slotsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const anchorRef = useRef("");
   const [layoutReady, setLayoutReady] = useState(false);
   const [, setFrame] = useState(0);
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
@@ -580,18 +585,18 @@ export function AttackGraph({ graph, onSelect, selectedKey, onClear }: { graph: 
       .force("anchorY", null)
       // 每个黑色目标钉在自己的分区槽位
       .force("targetX", forceX<SimNode>((d) => (
-        d.type === "target" ? (slots.get(d.key)?.x ?? TARGET_X) : TARGET_X
-      )).strength((d) => (d.type === "target" ? 0.98 : 0)))
+        isLayoutAnchor(d, anchorRef.current) ? (slots.get(d.key)?.x ?? TARGET_X) : (slots.get(home.get(d.key) || "")?.x ?? TARGET_X)
+      )).strength((d) => (isLayoutAnchor(d, anchorRef.current) ? 0.9 : 0)))
       .force("targetY", forceY<SimNode>((d) => (
-        d.type === "target" ? (slots.get(d.key)?.y ?? TARGET_Y) : TARGET_Y
-      )).strength((d) => (d.type === "target" ? 0.98 : 0)));
+        isLayoutAnchor(d, anchorRef.current) ? (slots.get(d.key)?.y ?? TARGET_Y) : (slots.get(home.get(d.key) || "")?.y ?? TARGET_Y)
+      )).strength((d) => (isLayoutAnchor(d, anchorRef.current) ? 0.9 : 0)));
   }, []);
 
   const reseedLayout = useCallback((nodes: SimNode[]) => {
     const home = homeRef.current;
     const slots = slotsRef.current;
     nodes.forEach((n, i) => {
-      if (n.type === "target") {
+      if (isLayoutAnchor(n, anchorRef.current)) {
         const slot = slots.get(n.key) || targetSlot(0);
         n.x = slot.x;
         n.y = slot.y;
@@ -617,7 +622,7 @@ export function AttackGraph({ graph, onSelect, selectedKey, onClear }: { graph: 
     if (!nodes.length) return;
     if (reseed) reseedLayout(nodes);
     simRef.current?.stop();
-    const sim = forceSimulation<SimNode>(nodes).alphaDecay(0.055).velocityDecay(0.45).stop();
+    const sim = forceSimulation<SimNode>(nodes).alphaDecay(0.04).velocityDecay(0.45);
     applyForces(
       sim,
       linksRef.current,
@@ -626,18 +631,26 @@ export function AttackGraph({ graph, onSelect, selectedKey, onClear }: { graph: 
       homeRef.current,
       slotsRef.current,
     );
-    const warm = () => {
-      sim.alpha(1);
-      for (let i = 0; i < 160; i++) sim.tick();
-      restrainOrphans(nodes, connectedRef.current, null, homeRef.current, slotsRef.current);
-    };
-    warm();
-    if (nodes.length > 2 && isCollapsed(nodes)) {
-      reseedLayout(nodes);
-      warm();
-    }
-    clampSpread(nodes, homeRef.current, slotsRef.current);
+    // 先静默收敛几步，再交给受力引擎继续动，避免一上来甩飞，也避免算完就钉死。
     sim.stop();
+    sim.alpha(1);
+    for (let i = 0; i < 80; i++) sim.tick();
+    restrainOrphans(nodes, connectedRef.current, null, homeRef.current, slotsRef.current);
+    clampSpread(nodes, homeRef.current, slotsRef.current);
+    sim.alpha(0.55).restart();
+    sim.on("tick", () => {
+      restrainOrphans(
+        nodesRef.current,
+        connectedRef.current,
+        dragRef.current.node?.key || null,
+        homeRef.current,
+        slotsRef.current,
+      );
+      setFrame((f) => f + 1);
+    });
+    sim.on("end", () => {
+      if (autoFitRef.current) fitToNodes();
+    });
     simRef.current = sim;
     if (autoFitRef.current) fitToNodes();
     setFrame((f) => f + 1);
@@ -652,8 +665,11 @@ export function AttackGraph({ graph, onSelect, selectedKey, onClear }: { graph: 
     topoRef.current = topo;
 
     const home = assignHomeTargets(g.nodes, g.edges);
+    const ordered = orderedTargets(g.nodes, g.edges);
     const slots = new Map<string, { x: number; y: number }>();
-    orderedTargets(g.nodes, g.edges).forEach((t, i) => slots.set(t.key, targetSlot(i)));
+    ordered.forEach((t, i) => slots.set(t.key, targetSlot(i)));
+    const anchor = ordered.find((t) => (t.tags || []).includes("entry")) || ordered[0];
+    anchorRef.current = anchor?.key || "";
     homeRef.current = home;
     slotsRef.current = slots;
 
@@ -673,11 +689,11 @@ export function AttackGraph({ graph, onSelect, selectedKey, onClear }: { graph: 
         return prev;
       }
       const p = seedPosition(n, i, g.nodes.length, home.get(n.key) || "", slots);
-      if (n.type === "target") {
+      if (isLayoutAnchor(n, anchorRef.current)) {
         const slot = slots.get(n.key) || targetSlot(0);
         return { ...n, x: slot.x, y: slot.y, fx: slot.x, fy: slot.y };
       }
-      return { ...n, x: p.x, y: p.y };
+      return { ...n, x: p.x, y: p.y, fx: null, fy: null };
     });
 
     const targetsStacked = (() => {
@@ -692,17 +708,20 @@ export function AttackGraph({ graph, onSelect, selectedKey, onClear }: { graph: 
     })();
 
     for (const n of nodes) {
-      if (n.type === "target" && !dragRef.current.node) {
-        const slot = slots.get(n.key) || targetSlot(0);
-        if (!existing.has(n.key) || targetsStacked) {
-          n.fx = slot.x;
-          n.fy = slot.y;
-          n.x = slot.x;
-          n.y = slot.y;
-        } else {
-          n.fx = n.x;
-          n.fy = n.y;
+      if (!isLayoutAnchor(n, anchorRef.current)) {
+        if (!dragRef.current.node || dragRef.current.node.key !== n.key) {
+          n.fx = null;
+          n.fy = null;
         }
+        continue;
+      }
+      if (dragRef.current.node) continue;
+      const slot = slots.get(n.key) || targetSlot(0);
+      if (!existing.has(n.key) || targetsStacked) {
+        n.fx = slot.x;
+        n.fy = slot.y;
+        n.x = slot.x;
+        n.y = slot.y;
       }
     }
 
@@ -853,12 +872,13 @@ export function AttackGraph({ graph, onSelect, selectedKey, onClear }: { graph: 
   const onUp = () => {
     const d = dragRef.current;
     if (d.node && d.moved) {
-      if (d.node.type === "target") {
+      if (isLayoutAnchor(d.node, anchorRef.current)) {
         d.node.fx = d.node.x;
         d.node.fy = d.node.y;
       } else {
         d.node.fx = null;
         d.node.fy = null;
+        simRef.current?.alpha(0.35).restart();
       }
     }
     d.node = null;
