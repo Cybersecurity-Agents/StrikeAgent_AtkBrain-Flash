@@ -129,7 +129,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link to="/vulns" className={`sidebar-link ${onVulns ? "active" : ""}`} title={t("shell.vulns")}>
             <Icon name="vulns" /><span>{t("shell.vulns")}</span>
           </Link>
-          <Link to="/settings" className={`sidebar-link ${location.pathname === "/settings" ? "active" : ""}`} title={t("shell.settings")}>
+          <Link to="/settings/account" className={`sidebar-link ${location.pathname.startsWith("/settings") ? "active" : ""}`} title={t("shell.settings")}>
             <Icon name="settings" /><span>{t("shell.settings")}</span>
           </Link>
           {me?.authenticated ? (
